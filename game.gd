@@ -1,5 +1,6 @@
 extends Node3D
 
+# This script handles the game logic for a match-3 game.
 
 @export_file("*.txt") var board_txt: String
 
@@ -7,7 +8,7 @@ extends Node3D
 @export var collision_body: PackedScene = null
 
 var board: Array = []
-
+var board_root: Node3D = null
 
 
 func _ready() -> void:
@@ -16,7 +17,7 @@ func _ready() -> void:
 	
 	pass
 	
-func load_board_from_txt()->void:
+func load_board_from_txt() -> void:
 	var file = FileAccess.open(board_txt, FileAccess.READ)
 	if file == null:
 		print("Failed to open file")
@@ -37,9 +38,9 @@ func load_board_from_txt()->void:
 	file.close()
 
 func instantiate_gems() -> void:
-	var board_node = Node3D.new()
-	board_node.name = "Board"
-	add_child(board_node)
+	board_root = Node3D.new()
+	board_root.name = "Board"
+	add_child(board_root)
 
 	var board_width = 0
 	var board_height = board.size()
@@ -53,21 +54,28 @@ func instantiate_gems() -> void:
 				continue
 
 			var gem = gems[gem_id].instantiate()
-			gem.position = Vector3(board_height - i, 0, j)
-			gem.set_meta("gem_id", gem_id)
-			gem.set_meta("gem_pos", Vector2(i, j))
-			board_node.add_child(gem)
+			gem.name = "Gem_" + str(i) + "_" + str(j)
+			gem.set_meta("gem_pos", Vector2i(i, j))
+			board_root.add_child(gem)
+			set_gem_position(gem, Vector2i(i, j))
 
 			var collision_body_instance = collision_body.instantiate()
-			collision_body_instance.position = Vector3(board_height - i, 0, j)
-			collision_body_instance.set_meta("gem_id", gem_id)
-			collision_body_instance.set_meta("gem_pos", Vector2(i, j))
-			board_node.add_child(collision_body_instance)
+			collision_body_instance.name = "CollisionBody_" + str(i) + "_" + str(j)
+			collision_body_instance.set_meta("gem_pos", Vector2i(i, j))
+			board_root.add_child(collision_body_instance)
+			set_gem_position(collision_body_instance, Vector2i(i, j))
 
 	$CameraHandle.position = Vector3((board_height - 1) / 2.0, 0, (board_width - 1) / 2.0)
 
+func set_gem_position(gem: Node3D, new_pos: Vector2i) -> void:
+	var board_height = board.size()
+	gem.position = Vector3(board_height - new_pos.x, 0, new_pos.y)
+
+
 enum InputState {IDLE, PICKED_1}
 var input_state: InputState = InputState.IDLE
+var first_gem_picked: Node3D
+var second_gem_picked: Node3D
 
 func _input(event):
 	if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed and input_state == InputState.IDLE:
@@ -78,13 +86,12 @@ func _input(event):
 		process_input_released(event.position)
 
 	if (event is InputEventMouseMotion or event is InputEventScreenDrag) and input_state == InputState.PICKED_1:
-		print("Dragging: ", event.position)
+		process_input_dragged(event.position)
 
 	
 	pass
 
-
-func process_input_pressed(input_position: Vector2) -> void:
+func raypick(input_position: Vector2) -> StaticBody3D:
 	var camera = get_viewport().get_camera_3d()
 	if camera == null:
 		print("Camera not found")
@@ -98,20 +105,52 @@ func process_input_pressed(input_position: Vector2) -> void:
 
 	var result = space_state.intersect_ray(query)
 	if result:
-		var collider = result.collider
-		if collider.has_meta("gem_id"):
-			var gem_id = collider.get_meta("gem_id")
-			var gem_pos = collider.get_meta("gem_pos")
-			print("Gem ID: ", gem_id, " at position: ", gem_pos)
-			input_state = InputState.PICKED_1
-			return
+		if result.collider.has_meta("gem_pos"):
+			return result.collider
 		else:
-			input_state = InputState.IDLE
-			return
+			return null
+	else:
+		return null
+
+func find_gem_by_pos(pos: Vector2i) -> Node3D:
+	var gem_name = "Gem_" + str(pos.x) + "_" + str(pos.y)
+	var gem = board_root.get_node(gem_name)
+	return gem
+
+func process_input_pressed(input_position: Vector2) -> void:
+	var ray_pick_result = raypick(input_position)
+	if ray_pick_result:
+		var gem_pos = ray_pick_result.get_meta("gem_pos")
+		first_gem_picked = find_gem_by_pos(gem_pos)
+		input_state = InputState.PICKED_1
+		return
 	else:
 		input_state = InputState.IDLE
 		return
 
+func process_input_dragged(input_position: Vector2) -> void:
+	var ray_pick_result = raypick(input_position)
+	if !ray_pick_result:
+		return
+
+	var gem_pos = ray_pick_result.get_meta("gem_pos")
+	var gem = find_gem_by_pos(gem_pos)
+
+	if first_gem_picked == gem or second_gem_picked == gem:
+		return
+
+	if second_gem_picked:
+		set_gem_position(gem, gem.get_meta("gem_pos"))
+	second_gem_picked = gem
+		
+	var temp_pos = first_gem_picked.position
+	first_gem_picked.position = second_gem_picked.position
+	second_gem_picked.position = temp_pos
+
+	pass
+
 func process_input_released(input_position: Vector2) -> void:
 	input_state = InputState.IDLE
+	first_gem_picked = null
+	second_gem_picked = null
 	pass
