@@ -1,14 +1,23 @@
 extends Node3D
 
 
+@export_file("*.txt") var board_txt: String
+
 @export var gems: Array[PackedScene] = []
 @export var collision_body: PackedScene = null
 
 var board: Array = []
 
 
-func _init() -> void:
-	var file = FileAccess.open("res://board1.txt", FileAccess.READ)
+
+func _ready() -> void:
+	load_board_from_txt()
+	instantiate_gems()
+	
+	pass
+	
+func load_board_from_txt()->void:
+	var file = FileAccess.open(board_txt, FileAccess.READ)
 	if file == null:
 		print("Failed to open file")
 		return
@@ -26,11 +35,8 @@ func _init() -> void:
 		board.append(board_line)
 
 	file.close()
-	
-	pass
 
-
-func _ready() -> void:
+func instantiate_gems() -> void:
 	var board_node = Node3D.new()
 	board_node.name = "Board"
 	add_child(board_node)
@@ -60,14 +66,10 @@ func _ready() -> void:
 
 	$CameraHandle.position = Vector3((board_height - 1) / 2.0, 0, (board_width - 1) / 2.0)
 
-	pass
-
-
 enum InputState {IDLE, PICKED_1}
 var input_state: InputState = InputState.IDLE
 
 func _input(event):
-	var input_position: Vector2 = event.position
 	if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed and input_state == InputState.IDLE:
 		process_input_pressed(event.position)
 		return

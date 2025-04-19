@@ -9,6 +9,7 @@
 
 [node name="game" type="Node3D"]
 script = ExtResource("1_80nbo")
+board_txt = "res://board1.txt"
 gems = Array[PackedScene]([ExtResource("2_7jktm"), ExtResource("3_ryrav"), ExtResource("4_eow3j"), ExtResource("5_j5wjh")])
 collision_body = ExtResource("6_ryrav")
 
