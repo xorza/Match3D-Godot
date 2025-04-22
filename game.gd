@@ -54,8 +54,7 @@ func instantiate_gems() -> void:
 				continue
 
 			var gem = gems[gem_id].instantiate()
-			gem.name = "Gem_" + str(i) + "_" + str(j)
-			gem.set_meta("gem_pos", Vector2i(i, j))
+			set_gem_name(gem, Vector2i(i, j))
 			board_root.add_child(gem)
 			set_gem_position(gem, Vector2i(i, j))
 
@@ -71,27 +70,31 @@ func set_gem_position(gem: Node3D, new_pos: Vector2i) -> void:
 	var board_height = board.size()
 	gem.position = Vector3(board_height - new_pos.x, 0, new_pos.y)
 
+func set_gem_name(gem: Node3D, new_pos: Vector2i) -> void:
+	gem.name = "Gem_" + str(new_pos.x) + "_" + str(new_pos.y)
+	gem.set_meta("gem_pos", new_pos)
 
-enum InputState {IDLE, PICKED_1}
+
+enum InputState {IDLE, PICKED_1, PICKED_2}
 var input_state: InputState = InputState.IDLE
-var first_gem_picked: Node3D
-var second_gem_picked: Node3D
+var first_gem_pos: Vector2i
+var second_gem_pos: Vector2i
 
 func _input(event):
 	if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed and input_state == InputState.IDLE:
 		process_input_pressed(event.position)
 		return
 
-	if (event is InputEventMouseButton or event is InputEventScreenTouch) and !event.pressed and input_state == InputState.PICKED_1:
+	if (event is InputEventMouseButton or event is InputEventScreenTouch) and !event.pressed and input_state != InputState.IDLE:
 		process_input_released(event.position)
 
-	if (event is InputEventMouseMotion or event is InputEventScreenDrag) and input_state == InputState.PICKED_1:
+	if (event is InputEventMouseMotion or event is InputEventScreenDrag) and input_state != InputState.IDLE:
 		process_input_dragged(event.position)
 
 	
 	pass
 
-func raypick(input_position: Vector2) -> StaticBody3D:
+func raypick_gem(input_position: Vector2) -> StaticBody3D:
 	var camera = get_viewport().get_camera_3d()
 	if camera == null:
 		print("Camera not found")
@@ -106,7 +109,7 @@ func raypick(input_position: Vector2) -> StaticBody3D:
 	var result = space_state.intersect_ray(query)
 	if result:
 		if result.collider.has_meta("gem_pos"):
-			return result.collider
+			return find_gem_by_pos(result.collider.get_meta("gem_pos"))
 		else:
 			return null
 	else:
@@ -118,10 +121,9 @@ func find_gem_by_pos(pos: Vector2i) -> Node3D:
 	return gem
 
 func process_input_pressed(input_position: Vector2) -> void:
-	var ray_pick_result = raypick(input_position)
+	var ray_pick_result = raypick_gem(input_position)
 	if ray_pick_result:
-		var gem_pos = ray_pick_result.get_meta("gem_pos")
-		first_gem_picked = find_gem_by_pos(gem_pos)
+		first_gem_pos = ray_pick_result.get_meta("gem_pos")
 		input_state = InputState.PICKED_1
 		return
 	else:
@@ -129,28 +131,42 @@ func process_input_pressed(input_position: Vector2) -> void:
 		return
 
 func process_input_dragged(input_position: Vector2) -> void:
-	var ray_pick_result = raypick(input_position)
-	if !ray_pick_result:
+	var new_gem = raypick_gem(input_position)
+	if !new_gem:
 		return
 
-	var gem_pos = ray_pick_result.get_meta("gem_pos")
-	var gem = find_gem_by_pos(gem_pos)
-
-	if first_gem_picked == gem or second_gem_picked == gem:
+	var new_gem_pos = new_gem.get_meta("gem_pos")
+	
+	if first_gem_pos == new_gem_pos:
 		return
 
-	if second_gem_picked:
-		set_gem_position(gem, gem.get_meta("gem_pos"))
-	second_gem_picked = gem
-		
-	var temp_pos = first_gem_picked.position
-	first_gem_picked.position = second_gem_picked.position
-	second_gem_picked.position = temp_pos
+	if input_state == InputState.PICKED_2:
+		if second_gem_pos == new_gem_pos:
+			return
+		var prev_second_gem = find_gem_by_pos(second_gem_pos)
+		set_gem_position(prev_second_gem, second_gem_pos)
+	second_gem_pos = new_gem_pos
 
+	input_state = InputState.PICKED_2
+
+	var first_gem = find_gem_by_pos(first_gem_pos)
+	set_gem_position(first_gem, second_gem_pos)
+	set_gem_position(new_gem, first_gem_pos)
+	
 	pass
 
-func process_input_released(input_position: Vector2) -> void:
+func process_input_released(_input_position: Vector2) -> void:
+	if input_state == InputState.PICKED_1:
+		input_state = InputState.IDLE
+		return
+
+	if input_state == InputState.PICKED_2:
+		var first_gem = find_gem_by_pos(first_gem_pos)
+		var second_gem = find_gem_by_pos(second_gem_pos)
+		set_gem_name(first_gem, Vector2i(-1, -1))
+		set_gem_name(second_gem, first_gem_pos)
+		set_gem_name(first_gem, second_gem_pos)
+
 	input_state = InputState.IDLE
-	first_gem_picked = null
-	second_gem_picked = null
+
 	pass
