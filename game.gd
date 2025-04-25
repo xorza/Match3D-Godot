@@ -6,8 +6,10 @@ extends Node3D
 
 @export var gems: Array[PackedScene] = []
 @export var collision_body: PackedScene = null
+@export var anim_time: float = 0.15
 
 var board: Array = []
+var board_gems: Array = []
 var board_root: Node3D = null
 
 
@@ -29,11 +31,14 @@ func load_board_from_txt() -> void:
 		for i in range(line.length()):
 			var c = line[i]
 			if c == "X" or c == "x":
-				board_line.append(0)
+				board_line.append(-1)
 			else:
 				board_line.append(int(c))
 
-		board.append(board_line)
+		if board_line.size() > 0:
+			board.append(board_line)
+			board_gems.append(Array())
+			board_gems[board.size() - 1].resize(board_line.size())
 
 	file.close()
 
@@ -50,44 +55,53 @@ func instantiate_gems() -> void:
 				board_width = board[i].size()
 
 			var gem_id = board[i][j]
-			if gem_id == 0:
+			if gem_id == 0 or gem_id == -1:
 				continue
 
 			var gem = gems[gem_id].instantiate()
-			set_gem_name(gem, Vector2i(i, j))
+			set_gem_name(gem, gem_id)
+			
 			board_root.add_child(gem)
 			set_gem_pos(gem, Vector2i(i, j))
 
 			var collision_body_instance = collision_body.instantiate()
+			board_root.add_child(collision_body_instance)
+			collision_body_instance.position = get_3d_pos(Vector2i(i, j))
 			collision_body_instance.name = "CollisionBody_" + str(i) + "_" + str(j)
 			collision_body_instance.set_meta("gem_pos", Vector2i(i, j))
-			board_root.add_child(collision_body_instance)
-			set_gem_pos(collision_body_instance, Vector2i(i, j))
 
-	$CameraHandle.position = Vector3((board_height - 1) / 2.0, 0, (board_width - 1) / 2.0)
+	$CameraHandle.position = Vector3((board_height - 2) / 2.0, 0, (board_width - 1) / 2.0)
+
+
+func get_3d_pos(pos: Vector2i) -> Vector3:
+	return Vector3(board.size() - pos.x, 0, pos.y)
+
 
 func set_gem_pos(gem: Node3D, new_pos: Vector2i) -> void:
-	var board_height = board.size()
-	gem.position = Vector3(board_height - new_pos.x, 0, new_pos.y)
+	gem.position = get_3d_pos(new_pos)
+	gem.set_meta("gem_pos", new_pos)
+	board_gems[new_pos.x][new_pos.y] = gem
 	pass
 
 func anim_gem_pos(gem: Node3D, new_pos: Vector2i) -> void:
-	var board_height = board.size()
-	var tween = create_tween()
-	tween.tween_property(gem, "position", Vector3(board_height - new_pos.x, 0, new_pos.y), 0.15)
+	create_tween().tween_property(gem, "position", get_3d_pos(new_pos), anim_time)
+	gem.set_meta("gem_pos", new_pos)
+	board_gems[new_pos.x][new_pos.y] = gem
 	pass
 
-func set_gem_name(gem: Node3D, new_pos: Vector2i) -> void:
-	gem.name = "Gem_" + str(new_pos.x) + "_" + str(new_pos.y)
-	gem.set_meta("gem_pos", new_pos)
+func set_gem_name(gem: Node3D, gem_id: int) -> void:
+	gem.name = "Gem_" + str(gem_id) + "_"
 
 
-enum InputState {IDLE, PICKED_1, PICKED_2}
+enum InputState {IDLE, PICKED_1, PICKED_2, PROCESSING}
 var input_state: InputState = InputState.IDLE
 var first_gem_pos: Vector2i
 var second_gem_pos: Vector2i
 
 func _input(event):
+	if input_state == InputState.PROCESSING:
+		return
+
 	if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed and input_state == InputState.IDLE:
 		process_input_pressed(event.position)
 		return
@@ -98,7 +112,6 @@ func _input(event):
 	if (event is InputEventMouseMotion or event is InputEventScreenDrag) and input_state != InputState.IDLE:
 		process_input_dragged(event.position)
 
-	
 	pass
 
 func raypick_gem(input_position: Vector2) -> StaticBody3D:
@@ -123,9 +136,7 @@ func raypick_gem(input_position: Vector2) -> StaticBody3D:
 		return null
 
 func find_gem_by_pos(pos: Vector2i) -> Node3D:
-	var gem_name = "Gem_" + str(pos.x) + "_" + str(pos.y)
-	var gem = board_root.get_node(gem_name)
-	return gem
+	return board_gems[pos.x][pos.y]
 
 func process_input_pressed(input_position: Vector2) -> void:
 	var ray_pick_result = raypick_gem(input_position)
@@ -203,12 +214,119 @@ func process_input_released(_input_position: Vector2) -> void:
 		return
 
 	if input_state == InputState.PICKED_2:
-		var first_gem = find_gem_by_pos(first_gem_pos)
-		var second_gem = find_gem_by_pos(second_gem_pos)
-		set_gem_name(first_gem, Vector2i(-1, -1))
-		set_gem_name(second_gem, first_gem_pos)
-		set_gem_name(first_gem, second_gem_pos)
+		# var first_gem = find_gem_by_pos(first_gem_pos)
+		# var second_gem = find_gem_by_pos(second_gem_pos)
+		var first_gem_id = board[first_gem_pos.x][first_gem_pos.y]
+		board[first_gem_pos.x][first_gem_pos.y] = board[second_gem_pos.x][second_gem_pos.y]
+		board[second_gem_pos.x][second_gem_pos.y] = first_gem_id
 
 	input_state = InputState.IDLE
 
+	process_board()
+
+	pass
+
+
+func process_board() -> void:
+	input_state = InputState.PROCESSING
+
+	var has_changes: bool = true
+	while has_changes:
+		has_changes = false
+
+		var has_empty: bool = true
+		while has_empty:
+			has_empty = false
+
+			for i in range(board.size() - 2, -1, -1):
+				for j in range(board[i].size()):
+					if board[i][j] < 1:
+						continue
+
+					if j < board[i + 1].size() and board[i + 1][j] == 0:
+						board[i + 1][j] = board[i][j]
+						board[i][j] = 0
+						var gem = find_gem_by_pos(Vector2i(i, j))
+						assert(gem != null)
+						anim_gem_pos(gem, Vector2i(i + 1, j))
+						has_empty = true
+						continue
+
+					if j > 0 and board[i + 1][j - 1] == 0:
+						board[i + 1][j - 1] = board[i][j]
+						board[i][j] = 0
+						var gem = find_gem_by_pos(Vector2i(i, j))
+						assert(gem != null)
+						anim_gem_pos(gem, Vector2i(i + 1, j - 1))
+						has_empty = true
+						continue
+
+					if j < board[i + 1].size() - 1 and board[i + 1][j + 1] == 0:
+						board[i + 1][j + 1] = board[i][j]
+						board[i][j] = 0
+						var gem = find_gem_by_pos(Vector2i(i, j))
+						assert(gem != null)
+						anim_gem_pos(gem, Vector2i(i + 1, j + 1))
+						has_empty = true
+						continue
+
+
+					pass
+		
+			for j in range(board[0].size()):
+				if board[0][j] != 0:
+					continue
+				var gem_id = randi() % (gems.size() - 1) + 1
+				board[0][j] = gem_id
+				var gem = gems[gem_id].instantiate()
+				board_root.add_child(gem)
+				gem.position = get_3d_pos(Vector2i(-1, j))
+				anim_gem_pos(gem, Vector2i(0, j))
+				set_gem_name(gem, gem_id)
+				pass
+
+			await get_tree().create_timer(anim_time).timeout
+			pass
+
+
+		for i in range(board.size()):
+			for j in range(board[i].size()):
+				if board[i][j] == -1 or board[i][j] == 0:
+					continue
+
+				var gem_id = board[i][j]
+				var count = 1
+				for k in range(1, board.size() - i):
+					if j < board[i + k].size() and board[i + k][j] == gem_id:
+						count += 1
+					else:
+						break
+
+				if count >= 3:
+					has_changes = true
+					for k in range(count):
+						board[i + k][j] = 0
+
+				count = 1
+				for k in range(1, board[i].size() - j):
+					if board[i][j + k] == gem_id:
+						count += 1
+					else:
+						break
+
+				if count >= 3:
+					has_changes = true
+					for k in range(count):
+						board[i][j + k] = 0
+
+		for i in range(board.size()):
+			for j in range(board[i].size()):
+				if board[i][j] == 0:
+					var gem = find_gem_by_pos(Vector2i(i, j))
+					if gem:
+						gem.queue_free()
+						board_gems[i][j] = null
+						
+
+	input_state = InputState.IDLE
 	pass
