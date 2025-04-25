@@ -56,19 +56,26 @@ func instantiate_gems() -> void:
 			var gem = gems[gem_id].instantiate()
 			set_gem_name(gem, Vector2i(i, j))
 			board_root.add_child(gem)
-			set_gem_position(gem, Vector2i(i, j))
+			set_gem_pos(gem, Vector2i(i, j))
 
 			var collision_body_instance = collision_body.instantiate()
 			collision_body_instance.name = "CollisionBody_" + str(i) + "_" + str(j)
 			collision_body_instance.set_meta("gem_pos", Vector2i(i, j))
 			board_root.add_child(collision_body_instance)
-			set_gem_position(collision_body_instance, Vector2i(i, j))
+			set_gem_pos(collision_body_instance, Vector2i(i, j))
 
 	$CameraHandle.position = Vector3((board_height - 1) / 2.0, 0, (board_width - 1) / 2.0)
 
-func set_gem_position(gem: Node3D, new_pos: Vector2i) -> void:
+func set_gem_pos(gem: Node3D, new_pos: Vector2i) -> void:
 	var board_height = board.size()
 	gem.position = Vector3(board_height - new_pos.x, 0, new_pos.y)
+	pass
+
+func anim_gem_pos(gem: Node3D, new_pos: Vector2i) -> void:
+	var board_height = board.size()
+	var tween = create_tween()
+	tween.tween_property(gem, "position", Vector3(board_height - new_pos.x, 0, new_pos.y), 0.15)
+	pass
 
 func set_gem_name(gem: Node3D, new_pos: Vector2i) -> void:
 	gem.name = "Gem_" + str(new_pos.x) + "_" + str(new_pos.y)
@@ -131,28 +138,63 @@ func process_input_pressed(input_position: Vector2) -> void:
 		return
 
 func process_input_dragged(input_position: Vector2) -> void:
+	match input_state:
+		InputState.IDLE:
+			return
+		InputState.PICKED_1:
+			process_input_dragged_first(input_position)
+			return
+		InputState.PICKED_2:
+			process_input_dragged_second(input_position)
+			return
+	pass
+
+func are_gems_adjacent(pos1: Vector2i, pos2: Vector2i) -> bool:
+	return (abs(pos1.x - pos2.x) == 1 and pos1.y == pos2.y) or (abs(pos1.y - pos2.y) == 1 and pos1.x == pos2.x)
+
+func process_input_dragged_first(input_position: Vector2) -> void:
 	var new_gem = raypick_gem(input_position)
 	if !new_gem:
 		return
 
 	var new_gem_pos = new_gem.get_meta("gem_pos")
-	
 	if first_gem_pos == new_gem_pos:
 		return
-
-	if input_state == InputState.PICKED_2:
-		if second_gem_pos == new_gem_pos:
-			return
-		var prev_second_gem = find_gem_by_pos(second_gem_pos)
-		set_gem_position(prev_second_gem, second_gem_pos)
+	if !are_gems_adjacent(first_gem_pos, new_gem_pos):
+		return
+	
 	second_gem_pos = new_gem_pos
-
 	input_state = InputState.PICKED_2
 
 	var first_gem = find_gem_by_pos(first_gem_pos)
-	set_gem_position(first_gem, second_gem_pos)
-	set_gem_position(new_gem, first_gem_pos)
-	
+	anim_gem_pos(first_gem, second_gem_pos)
+	anim_gem_pos(new_gem, first_gem_pos)
+
+	pass
+
+func process_input_dragged_second(input_position: Vector2) -> void:
+	var new_gem = raypick_gem(input_position)
+	if !new_gem:
+		return
+
+	var new_gem_pos = new_gem.get_meta("gem_pos")
+	if first_gem_pos == new_gem_pos:
+		return
+	if second_gem_pos == new_gem_pos:
+		return
+	if !are_gems_adjacent(first_gem_pos, new_gem_pos):
+		return
+
+	var prev_second_gem = find_gem_by_pos(second_gem_pos)
+	anim_gem_pos(prev_second_gem, second_gem_pos)
+
+	second_gem_pos = new_gem_pos
+	input_state = InputState.PICKED_2
+
+	var first_gem = find_gem_by_pos(first_gem_pos)
+	anim_gem_pos(first_gem, second_gem_pos)
+	anim_gem_pos(new_gem, first_gem_pos)
+
 	pass
 
 func process_input_released(_input_position: Vector2) -> void:
