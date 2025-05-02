@@ -238,6 +238,7 @@ func process_board() -> void:
 		while has_empty:
 			has_empty = false
 
+			# Move gems down
 			for i in range(board.size() - 2, -1, -1):
 				for j in range(board[i].size()):
 					if board[i][j] < 1:
@@ -270,9 +271,9 @@ func process_board() -> void:
 						has_empty = true
 						continue
 
-
 					pass
 		
+			# Spawn new gems in top row
 			for j in range(board[0].size()):
 				if board[0][j] != 0:
 					continue
@@ -288,6 +289,9 @@ func process_board() -> void:
 			await get_tree().create_timer(anim_time).timeout
 			pass
 
+
+		# Find all matches
+		var matched_pos: Array = []
 
 		for i in range(board.size()):
 			for j in range(board[i].size()):
@@ -305,7 +309,8 @@ func process_board() -> void:
 				if count >= 3:
 					has_changes = true
 					for k in range(count):
-						board[i + k][j] = 0
+						# board[i + k][j] = 0
+						matched_pos.append(Vector2i(i + k, j))
 
 				count = 1
 				for k in range(1, board[i].size() - j):
@@ -317,15 +322,17 @@ func process_board() -> void:
 				if count >= 3:
 					has_changes = true
 					for k in range(count):
-						board[i][j + k] = 0
+						# board[i][j + k] = 0
+						matched_pos.append(Vector2i(i, j + k))
 
-		for i in range(board.size()):
-			for j in range(board[i].size()):
-				if board[i][j] == 0:
-					var gem = find_gem_by_pos(Vector2i(i, j))
-					if gem:
-						gem.queue_free()
-						board_gems[i][j] = null
+		# Remove matched gems
+		for i in range(matched_pos.size()):
+			var pos = matched_pos[i]
+			board[pos.x][pos.y] = 0
+			var gem = find_gem_by_pos(pos)
+			if gem:
+				gem.queue_free()
+				board_gems[pos.x][pos.y] = null
 						
 
 	input_state = InputState.IDLE
